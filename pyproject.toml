@@ -1,0 +1,15 @@
+[project]
+name = "mipet-car"
+version = "0.1.0"
+description = "Raspberry Pi + TB6612 line-following car with sign stop detection."
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.24",
+    "opencv-contrib-python>=4.8",
+    "gpiozero>=2.0",
+    "Flask>=3.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

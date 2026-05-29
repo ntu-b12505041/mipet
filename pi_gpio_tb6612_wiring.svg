@@ -1,0 +1,160 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="900" viewBox="0 0 1280 900">
+  <defs>
+    <style>
+      .bg { fill: #f7f8fb; }
+      .board { fill: #2f8f56; stroke: #1f6b3e; stroke-width: 4; }
+      .port { fill: #d6dbe3; stroke: #8b95a1; stroke-width: 3; }
+      .header { fill: #171b22; stroke: #0b0f14; stroke-width: 3; }
+      .pin { fill: #2a2f38; stroke: #0b0f14; stroke-width: 2; }
+      .pin-use { fill: #ffb020; stroke: #9a5b00; stroke-width: 3; }
+      .pin-33 { fill: #ef4444; stroke: #991b1b; stroke-width: 3; }
+      .pin-gnd { fill: #111827; stroke: #000; stroke-width: 3; }
+      .tb { fill: #ffffff; stroke: #9ca3af; stroke-width: 4; }
+      .tbpin { fill: #eef2ff; stroke: #6366f1; stroke-width: 2; }
+      .battery { fill: #fff7ed; stroke: #f97316; stroke-width: 3; }
+      .warn { fill: #fee2e2; stroke: #ef4444; stroke-width: 3; }
+      .title { font-family: Arial, "Noto Sans TC", sans-serif; font-size: 34px; font-weight: 700; fill: #111827; }
+      .h2 { font-family: Arial, "Noto Sans TC", sans-serif; font-size: 25px; font-weight: 700; fill: #111827; }
+      .label { font-family: Arial, "Noto Sans TC", sans-serif; font-size: 21px; fill: #111827; }
+      .small { font-family: Arial, "Noto Sans TC", sans-serif; font-size: 17px; fill: #111827; }
+      .tiny { font-family: Arial, "Noto Sans TC", sans-serif; font-size: 12px; fill: #111827; }
+      .num { font-family: Arial, "Noto Sans TC", sans-serif; font-size: 13px; font-weight: 700; fill: #ffffff; text-anchor: middle; dominant-baseline: central; }
+      .wire { fill: none; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+      .red { stroke: #ef4444; }
+      .black { stroke: #111827; }
+      .blue { stroke: #2563eb; }
+      .orange { stroke: #f97316; }
+      .green { stroke: #16a34a; }
+      .purple { stroke: #7c3aed; }
+    </style>
+    <marker id="arrow-red" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M2,2 L10,6 L2,10 Z" fill="#ef4444"/></marker>
+    <marker id="arrow-black" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M2,2 L10,6 L2,10 Z" fill="#111827"/></marker>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M2,2 L10,6 L2,10 Z" fill="#2563eb"/></marker>
+    <marker id="arrow-orange" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M2,2 L10,6 L2,10 Z" fill="#f97316"/></marker>
+    <marker id="arrow-green" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M2,2 L10,6 L2,10 Z" fill="#16a34a"/></marker>
+    <marker id="arrow-purple" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M2,2 L10,6 L2,10 Z" fill="#7c3aed"/></marker>
+  </defs>
+
+  <rect class="bg" width="1280" height="900"/>
+  <text class="title" x="48" y="58">Raspberry Pi GPIO 腳位怎麼分辨</text>
+  <text class="label" x="48" y="94">把板子轉成這個方向：GPIO 排針在上方，USB / 網路孔在右邊。</text>
+
+  <!-- Pi board -->
+  <rect class="board" x="62" y="150" width="730" height="430" rx="26"/>
+  <text class="h2" x="98" y="200" fill="#ffffff">Raspberry Pi 正面</text>
+  <text class="small" x="98" y="230" fill="#e7f7ed">右邊看到 USB / 網路孔，就照這張圖數腳位</text>
+
+  <!-- ports on right -->
+  <rect class="port" x="710" y="250" width="104" height="70" rx="8"/>
+  <rect class="port" x="710" y="340" width="104" height="70" rx="8"/>
+  <rect class="port" x="710" y="445" width="104" height="90" rx="8"/>
+  <text class="small" x="830" y="292">USB</text>
+  <text class="small" x="830" y="382">USB</text>
+  <text class="small" x="830" y="498">網路孔</text>
+
+  <!-- GPIO header, physically horizontal on top edge -->
+  <text class="small" x="120" y="265" fill="#ffffff">靠板子外側：上排是偶數腳</text>
+  <text class="small" x="120" y="360" fill="#ffffff">靠板子內側：下排是奇數腳</text>
+  <rect class="header" x="112" y="280" width="560" height="68" rx="10"/>
+
+  <!-- top row, even pins, y 300 -->
+  <g id="top-even">
+    <circle class="pin" cx="127" cy="303" r="11"/><text class="num" x="127" y="303">2</text>
+    <circle class="pin" cx="154" cy="303" r="11"/><text class="num" x="154" y="303">4</text>
+    <circle class="pin-gnd" cx="181" cy="303" r="11"/><text class="num" x="181" y="303">6</text>
+    <circle class="pin" cx="208" cy="303" r="11"/><text class="num" x="208" y="303">8</text>
+    <circle class="pin" cx="235" cy="303" r="11"/><text class="num" x="235" y="303">10</text>
+    <circle class="pin-use" cx="262" cy="303" r="12"/><text class="num" x="262" y="303">12</text>
+    <circle class="pin-gnd" cx="289" cy="303" r="11"/><text class="num" x="289" y="303">14</text>
+    <circle class="pin" cx="316" cy="303" r="11"/><text class="num" x="316" y="303">16</text>
+    <circle class="pin" cx="343" cy="303" r="11"/><text class="num" x="343" y="303">18</text>
+    <circle class="pin-gnd" cx="370" cy="303" r="11"/><text class="num" x="370" y="303">20</text>
+    <circle class="pin" cx="397" cy="303" r="11"/><text class="num" x="397" y="303">22</text>
+    <circle class="pin" cx="424" cy="303" r="11"/><text class="num" x="424" y="303">24</text>
+    <circle class="pin" cx="451" cy="303" r="11"/><text class="num" x="451" y="303">26</text>
+    <circle class="pin" cx="478" cy="303" r="11"/><text class="num" x="478" y="303">28</text>
+    <circle class="pin-gnd" cx="505" cy="303" r="11"/><text class="num" x="505" y="303">30</text>
+    <circle class="pin" cx="532" cy="303" r="11"/><text class="num" x="532" y="303">32</text>
+    <circle class="pin-gnd" cx="559" cy="303" r="11"/><text class="num" x="559" y="303">34</text>
+    <circle class="pin" cx="586" cy="303" r="11"/><text class="num" x="586" y="303">36</text>
+    <circle class="pin" cx="613" cy="303" r="11"/><text class="num" x="613" y="303">38</text>
+    <circle class="pin" cx="640" cy="303" r="11"/><text class="num" x="640" y="303">40</text>
+  </g>
+
+  <!-- bottom row, odd pins, y 326 -->
+  <g id="bottom-odd">
+    <circle class="pin-33" cx="127" cy="326" r="12"/><text class="num" x="127" y="326">1</text>
+    <circle class="pin" cx="154" cy="326" r="11"/><text class="num" x="154" y="326">3</text>
+    <circle class="pin" cx="181" cy="326" r="11"/><text class="num" x="181" y="326">5</text>
+    <circle class="pin" cx="208" cy="326" r="11"/><text class="num" x="208" y="326">7</text>
+    <circle class="pin-gnd" cx="235" cy="326" r="11"/><text class="num" x="235" y="326">9</text>
+    <circle class="pin-use" cx="262" cy="326" r="12"/><text class="num" x="262" y="326">11</text>
+    <circle class="pin-use" cx="289" cy="326" r="12"/><text class="num" x="289" y="326">13</text>
+    <circle class="pin-use" cx="316" cy="326" r="12"/><text class="num" x="316" y="326">15</text>
+    <circle class="pin-33" cx="343" cy="326" r="11"/><text class="num" x="343" y="326">17</text>
+    <circle class="pin" cx="370" cy="326" r="11"/><text class="num" x="370" y="326">19</text>
+    <circle class="pin" cx="397" cy="326" r="11"/><text class="num" x="397" y="326">21</text>
+    <circle class="pin" cx="424" cy="326" r="11"/><text class="num" x="424" y="326">23</text>
+    <circle class="pin-gnd" cx="451" cy="326" r="11"/><text class="num" x="451" y="326">25</text>
+    <circle class="pin" cx="478" cy="326" r="11"/><text class="num" x="478" y="326">27</text>
+    <circle class="pin" cx="505" cy="326" r="11"/><text class="num" x="505" y="326">29</text>
+    <circle class="pin" cx="532" cy="326" r="11"/><text class="num" x="532" y="326">31</text>
+    <circle class="pin" cx="559" cy="326" r="11"/><text class="num" x="559" y="326">33</text>
+    <circle class="pin" cx="586" cy="326" r="11"/><text class="num" x="586" y="326">35</text>
+    <circle class="pin" cx="613" cy="326" r="11"/><text class="num" x="613" y="326">37</text>
+    <circle class="pin-gnd" cx="640" cy="326" r="11"/><text class="num" x="640" y="326">39</text>
+  </g>
+
+  <!-- callouts for used pins -->
+  <text class="small" x="98" y="418" fill="#ffffff">這次只要找這 6 個：</text>
+  <rect x="98" y="442" width="600" height="105" rx="12" fill="#e7f7ed" stroke="#b7e0c6" stroke-width="2"/>
+  <text class="small" x="120" y="472">Pin 1 = 3.3V → TB6612 VCC</text>
+  <text class="small" x="120" y="502">Pin 6 = GND → TB6612 GND</text>
+  <text class="small" x="120" y="532">Pin 11/13/12/15 = GPIO17/GPIO27/GPIO18/GPIO22 控制 TB6612</text>
+
+  <!-- TB6612 block -->
+  <rect class="tb" x="905" y="155" width="300" height="455" rx="16"/>
+  <text class="h2" x="975" y="204">TB6612</text>
+  <text class="small" x="965" y="231">馬達驅動板</text>
+
+  <rect class="tbpin" x="930" y="270" width="110" height="36" rx="6"/><text class="small" x="955" y="294">VCC</text>
+  <rect class="tbpin" x="930" y="322" width="110" height="36" rx="6"/><text class="small" x="955" y="346">GND</text>
+  <rect class="tbpin" x="930" y="374" width="110" height="36" rx="6"/><text class="small" x="955" y="398">AIN1</text>
+  <rect class="tbpin" x="930" y="426" width="110" height="36" rx="6"/><text class="small" x="955" y="450">AIN2</text>
+  <rect class="tbpin" x="930" y="478" width="110" height="36" rx="6"/><text class="small" x="955" y="502">PWMA</text>
+  <rect class="tbpin" x="930" y="530" width="110" height="36" rx="6"/><text class="small" x="955" y="554">STBY</text>
+  <rect class="tbpin" x="1068" y="270" width="110" height="36" rx="6"/><text class="small" x="1102" y="294">VM</text>
+  <rect class="tbpin" x="1068" y="322" width="110" height="36" rx="6"/><text class="small" x="1100" y="346">GND</text>
+  <rect class="tbpin" x="1068" y="426" width="110" height="36" rx="6"/><text class="small" x="1100" y="450">AO1</text>
+  <rect class="tbpin" x="1068" y="478" width="110" height="36" rx="6"/><text class="small" x="1100" y="502">AO2</text>
+
+  <!-- wires from GPIO to TB6612 -->
+  <path class="wire red" d="M127 326 C315 660, 835 255, 930 288" marker-end="url(#arrow-red)"/>
+  <path class="wire black" d="M181 303 C360 205, 790 310, 930 340" marker-end="url(#arrow-black)"/>
+  <path class="wire blue" d="M262 326 C470 365, 765 375, 930 392" marker-end="url(#arrow-blue)"/>
+  <path class="wire orange" d="M289 326 C500 435, 780 430, 930 444" marker-end="url(#arrow-orange)"/>
+  <path class="wire green" d="M262 303 C500 510, 775 490, 930 496" marker-end="url(#arrow-green)"/>
+  <path class="wire purple" d="M316 326 C530 600, 780 540, 930 548" marker-end="url(#arrow-purple)"/>
+
+  <text class="small" x="580" y="650" fill="#ef4444">Pin 1: 3.3V</text>
+  <text class="small" x="550" y="221" fill="#111827">Pin 6: GND</text>
+  <text class="small" x="565" y="390" fill="#2563eb">Pin 11: GPIO17</text>
+  <text class="small" x="565" y="430" fill="#f97316">Pin 13: GPIO27</text>
+  <text class="small" x="565" y="500" fill="#16a34a">Pin 12: GPIO18</text>
+  <text class="small" x="565" y="560" fill="#7c3aed">Pin 15: GPIO22</text>
+
+  <!-- battery/motor -->
+  <rect class="battery" x="84" y="640" width="480" height="180" rx="14"/>
+  <text class="h2" x="112" y="684">電池盒與馬達</text>
+  <text class="small" x="112" y="724">電池盒紅線 + → TB6612 VM</text>
+  <text class="small" x="112" y="754">電池盒黑線 - → TB6612 GND</text>
+  <text class="small" x="112" y="784">馬達兩條線 → TB6612 AO1 / AO2</text>
+
+  <path class="wire red" d="M564 722 C770 680, 1015 300, 1068 288" marker-end="url(#arrow-red)"/>
+  <path class="wire black" d="M564 752 C770 720, 1015 350, 1068 340" marker-end="url(#arrow-black)"/>
+
+  <rect class="warn" x="625" y="685" width="545" height="112" rx="14"/>
+  <text class="h2" x="650" y="728" fill="#991b1b">不要這樣接</text>
+  <text class="small" x="650" y="762" fill="#991b1b">電池紅線不要接 Pi 的 3.3V / 5V。</text>
+  <text class="small" x="650" y="790" fill="#991b1b">馬達不要直接接 Raspberry Pi GPIO。</text>
+</svg>
