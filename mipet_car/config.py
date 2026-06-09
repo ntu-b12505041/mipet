@@ -6,15 +6,20 @@ from typing import Tuple
 
 @dataclass(frozen=True)
 class MotorPins:
-    """GPIO pin mapping for a TB6612 dual motor driver."""
+    """GPIO pin mapping for logical left/right TB6612 control.
 
-    left_in1: int = 17
-    left_in2: int = 27
-    left_pwm: int = 18
-    right_in1: int = 23
-    right_in2: int = 24
-    right_pwm: int = 13
-    standby: int = 22
+    The current car wiring has left/right channels swapped and motor polarity
+    reversed, so the logical left motor maps to TB6612 B and logical right maps
+    to TB6612 A with IN1/IN2 intentionally reversed.
+    """
+
+    left_in1: int = 21
+    left_in2: int = 20
+    left_pwm: int = 13
+    right_in1: int = 6
+    right_in2: int = 5
+    right_pwm: int = 12
+    standby: int = 16
 
 
 @dataclass(frozen=True)
@@ -39,8 +44,8 @@ class LineDetectionConfig:
     roi_top_ratio: float = 0.55
     roi_bottom_ratio: float = 0.95
     black_value_max: int = 85
-    min_area: float = 400.0
-    morph_kernel_size: int = 5
+    min_area: float = 250.0
+    morph_kernel_size: int = 3
     color_lower_hsv: Tuple[int, int, int] = (20, 80, 80)
     color_upper_hsv: Tuple[int, int, int] = (40, 255, 255)
 

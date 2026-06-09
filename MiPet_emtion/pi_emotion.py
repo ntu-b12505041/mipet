@@ -1,8 +1,23 @@
 import time
 import json
 import threading
-import paho.mqtt.client as mqtt
-from RPLCD.i2c import CharLCD
+import os
+
+try:
+    import paho.mqtt.client as mqtt
+except Exception as exc:
+    mqtt = None
+    MQTT_IMPORT_ERROR = exc
+else:
+    MQTT_IMPORT_ERROR = None
+
+try:
+    from RPLCD.i2c import CharLCD
+except Exception as exc:
+    CharLCD = None
+    LCD_IMPORT_ERROR = exc
+else:
+    LCD_IMPORT_ERROR = None
 
 # ── MQTT ──────────────────────────────────────────────
 BROKER    = "broker.emqx.io"
@@ -12,6 +27,7 @@ CLIENT_ID = "mipet-pi-emotion"
 
 # ── LCD ───────────────────────────────────────────────
 LCD_ADDR = 0x27
+LCD_ADDR_CANDIDATES = (0x27, 0x3F)
 
 # ── 情緒變數預設值 ────────────────────────────────────
 DEFAULTS = {"happiness": 50, "loneliness": 20, "trust": 60}
@@ -38,10 +54,45 @@ MOUTH_SAD      = (0b00000, 0b00000, 0b00100, 0b01010, 0b10001, 0b00000, 0b00000,
 class LCDController:
 
     def __init__(self, addr=LCD_ADDR):
-        self.lcd   = CharLCD('PCF8574', addr, port=1, cols=16, rows=2)
+        self.lcd = self._create_lcd(addr)
         self._stop = threading.Event()
         self._thread = None
         self._lock   = threading.Lock()
+
+    def _create_lcd(self, addr):
+        if CharLCD is None:
+            if os.getenv("MIPET_ALLOW_CONSOLE_LCD") == "1":
+                print(f"[LCD] RPLCD unavailable, using console display: {LCD_IMPORT_ERROR}")
+                return ConsoleLCD()
+            raise RuntimeError(
+                "LCD is required but RPLCD is unavailable. "
+                "Install/check RPLCD, enable I2C, then rerun. "
+                f"Original error: {LCD_IMPORT_ERROR}"
+            )
+        last_error = None
+        candidates = [addr] + [candidate for candidate in LCD_ADDR_CANDIDATES if candidate != addr]
+        for candidate in candidates:
+            try:
+                lcd = CharLCD('PCF8574', candidate, port=1, cols=16, rows=2)
+                print(f"[LCD] connected at I2C address 0x{candidate:02X}")
+                return lcd
+            except FileNotFoundError as exc:
+                last_error = exc
+                break
+            except Exception as exc:
+                last_error = exc
+
+        if last_error is not None:
+            if os.getenv("MIPET_ALLOW_CONSOLE_LCD") == "1":
+                print(f"[LCD] LCD init failed, using console display: {last_error}")
+                return ConsoleLCD()
+            raise RuntimeError(
+                "LCD is required but initialization failed. Check wiring: "
+                "LCD VCC->5V, GND->GND, SDA->GPIO2/pin3, SCL->GPIO3/pin5, "
+                "enable I2C, and confirm address 0x27 or 0x3F with i2cdetect. "
+                f"Original error: {last_error}"
+            )
+        raise RuntimeError("LCD is required but initialization failed for an unknown reason.")
 
     def set_state(self, state: str):
         with self._lock:
@@ -55,6 +106,25 @@ class LCDController:
                 "CARING": self._anim_caring,
                 "IDLE":   self._anim_idle,
             }.get(state, self._anim_idle)
+            self._thread = threading.Thread(target=fn, daemon=True)
+            self._thread.start()
+
+    def show_emotion(self, emotion: str):
+        """Display the currently recognized facial emotion on the rear LCD."""
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                self._stop.set()
+                self._thread.join(timeout=1)
+            self._stop.clear()
+            fn = {
+                "happy": self._show_happy_face,
+                "surprise": self._show_surprise_face,
+                "angry": self._show_angry_face,
+                "disgust": self._show_angry_face,
+                "fear": self._show_worried_face,
+                "sad": self._show_sad_face,
+                "neutral": self._show_neutral_face,
+            }.get(emotion, self._show_neutral_face)
             self._thread = threading.Thread(target=fn, daemon=True)
             self._thread.start()
 
@@ -74,6 +144,49 @@ class LCDController:
 
     def _c(self, idx: int) -> str:
         return chr(idx)
+
+    def _show_static_face(self, face_line: str, text_line: str):
+        self._load_chars()
+        self.lcd.clear()
+        while not self._stop.is_set():
+            self._w(0, face_line)
+            self._w(1, text_line)
+            if self._stop.wait(0.25):
+                break
+
+    def _show_happy_face(self):
+        le = self._c(2); re = self._c(3); h = self._c(0); m = self._c(6)
+        self._show_static_face(f" {h}{h} ={le}{m}{re}= {h}{h}", " emotion:HAPPY ")
+
+    def _show_sad_face(self):
+        le = self._c(2); re = self._c(3); m = self._c(7)
+        self._show_static_face(f"    ={le}{m}{re}=    ", " emotion:SAD   ")
+
+    def _show_angry_face(self):
+        angry_eye = (0b10000, 0b01000, 0b01110, 0b11111, 0b11011, 0b11111, 0b01110, 0b00000)
+        self._load_chars()
+        self.lcd.create_char(2, angry_eye)
+        self.lcd.create_char(3, angry_eye)
+        le = self._c(2); re = self._c(3); m = self._c(7)
+        self._show_static_face(f"    ={le}{m}{re}=    ", " emotion:ANGRY ")
+
+    def _show_worried_face(self):
+        le = self._c(2); re = self._c(3); m = self._c(7)
+        self._show_static_face(f"   .={le}{m}{re}=.   ", " emotion:FEAR  ")
+
+    def _show_surprise_face(self):
+        mouth_o = (0b00000, 0b01110, 0b10001, 0b10001, 0b10001, 0b01110, 0b00000, 0b00000)
+        self._load_chars()
+        self.lcd.create_char(6, mouth_o)
+        le = self._c(2); re = self._c(3); m = self._c(6); s = self._c(1)
+        self._show_static_face(f" {s}  ={le}{m}{re}=  {s}", " emotion:WOW!  ")
+
+    def _show_neutral_face(self):
+        mouth_flat = (0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000, 0b00000)
+        self._load_chars()
+        self.lcd.create_char(6, mouth_flat)
+        le = self._c(2); re = self._c(3); m = self._c(6)
+        self._show_static_face(f"    ={le}{m}{re}=    ", " emotion:OK    ")
 
     # ── HAPPY：閉嘴微笑 ↔ 張嘴大笑，♡ ↔ ★ ───────────
     def _anim_happy(self):
@@ -187,6 +300,23 @@ class LCDController:
         self.lcd.clear()
 
 
+class ConsoleLCD:
+    """Minimal LCD fallback so emotion logic still runs while LCD is absent."""
+
+    def __init__(self):
+        self.cursor_pos = (0, 0)
+
+    def create_char(self, idx, data):
+        return None
+
+    def clear(self):
+        print("[LCD] clear")
+
+    def write_string(self, text):
+        row, _ = self.cursor_pos
+        print(f"[LCD:{row}] {text}")
+
+
 # ═══════════════════════════════════════════════════════
 #  EmotionEngine：3 個情緒變數 + 狀態機
 # ═══════════════════════════════════════════════════════
@@ -257,15 +387,20 @@ class MiPetEmotion:
         self.display = LCDController()
         self._prev_state = None
 
-        try:
-            self._mqtt = mqtt.Client(client_id=CLIENT_ID, protocol=mqtt.MQTTv5)
-            self._mqtt.connect(BROKER, PORT, keepalive=60)
-            self._mqtt.loop_start()
-            self._mqtt_ok = True
-        except Exception as e:
-            print(f"[Emotion] MQTT 連線失敗: {e}（LINE 推播停用，LCD 正常運作）")
+        if mqtt is None:
+            print(f"[Emotion] MQTT 套件 unavailable: {MQTT_IMPORT_ERROR}（LINE 推播停用，LCD 正常運作）")
             self._mqtt    = None
             self._mqtt_ok = False
+        else:
+            try:
+                self._mqtt = mqtt.Client(client_id=CLIENT_ID, protocol=mqtt.MQTTv5)
+                self._mqtt.connect(BROKER, PORT, keepalive=60)
+                self._mqtt.loop_start()
+                self._mqtt_ok = True
+            except Exception as e:
+                print(f"[Emotion] MQTT 連線失敗: {e}（LINE 推播停用，LCD 正常運作）")
+                self._mqtt    = None
+                self._mqtt_ok = False
 
         # 每小時衰減計時器
         self._decay_thread = threading.Thread(target=self._decay_loop, daemon=True)
@@ -283,6 +418,13 @@ class MiPetEmotion:
 
         self._apply_state(new_state)
 
+    def show_emotion(self, emotion: str):
+        self.display.show_emotion(emotion)
+
+    def refresh_state_display(self):
+        self._prev_state = None
+        self._apply_state(self.engine.get_state())
+
     def _apply_state(self, state: str):
         if state != self._prev_state:
             self.display.set_state(state)
@@ -294,8 +436,9 @@ class MiPetEmotion:
             self.handle_event("idle_too_long")
 
     def stop(self):
-        self._mqtt.loop_stop()
-        self._mqtt.disconnect()
+        if self._mqtt:
+            self._mqtt.loop_stop()
+            self._mqtt.disconnect()
         self.display.stop()
 
 

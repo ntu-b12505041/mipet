@@ -1,6 +1,7 @@
 """Flask MJPEG stream for camera and vision testing over SSH."""
 
 import argparse
+from contextlib import nullcontext
 from dataclasses import replace
 import logging
 import threading
@@ -10,8 +11,9 @@ from typing import Dict, Optional
 from flask import Flask, Response, jsonify
 
 from .camera import Camera, CameraError
-from .config import CameraConfig, DriveConfig, FoodDetectionConfig, LineDetectionConfig, SignDetectionConfig
+from .config import CameraConfig, DriveConfig, FoodDetectionConfig, LineDetectionConfig, MotorConfig, SignDetectionConfig
 from .decision import DriveState, MotorCommand, decide
+from .motor import MotorDriver
 from .vision_food import FoodDetector, draw_food_debug
 from .vision_line import detect_line
 from .vision_sign import detect_stop_sign, draw_sign_debug
@@ -136,6 +138,8 @@ class StreamWorker:
         *,
         jpeg_quality: int = 80,
         food_stop_seconds: float = 5.0,
+        drive_motors: bool = False,
+        dry_run: bool = False,
     ) -> None:
         self.camera_config = camera_config
         self.line_config = line_config
@@ -144,6 +148,8 @@ class StreamWorker:
         self.drive_config = drive_config
         self.jpeg_quality = jpeg_quality
         self.food_stop_seconds = food_stop_seconds
+        self.drive_motors = drive_motors
+        self.dry_run = dry_run
         self._food_stop_until = 0.0
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -159,6 +165,8 @@ class StreamWorker:
             "food_detected": False,
             "food_label": "",
             "food_score": 0.0,
+            "motor_enabled": drive_motors,
+            "motor_mock": dry_run,
             "error": None,
         }
 
@@ -196,7 +204,19 @@ class StreamWorker:
             if food_detector.enabled:
                 LOGGER.info("Food detector enabled for: %s", ", ".join(self.food_config.target_labels))
 
-            with Camera(self.camera_config) as camera:
+            motor_context = (
+                MotorDriver(MotorConfig(), dry_run=self.dry_run, allow_mock_fallback=self.dry_run)
+                if self.drive_motors
+                else nullcontext(None)
+            )
+            with Camera(self.camera_config) as camera, motor_context as motor:
+                if motor is None:
+                    LOGGER.info("Motor drive disabled; stream is vision-only. Add --drive to move motors.")
+                elif motor.using_mock:
+                    LOGGER.info("Motor is in dry-run/mock mode.")
+                else:
+                    LOGGER.info("Motor drive enabled.")
+
                 while not self._stop.is_set():
                     frame = camera.read()
                     sign_result = detect_stop_sign(frame, self.sign_config, debug=False)
@@ -220,6 +240,9 @@ class StreamWorker:
                     if not ok:
                         continue
 
+                    if motor is not None:
+                        motor.set_speed(command.left_speed, command.right_speed)
+
                     with self._lock:
                         self._latest_jpeg = encoded.tobytes()
                         self._status = {
@@ -233,6 +256,8 @@ class StreamWorker:
                             "food_detected": food_result.detected,
                             "food_label": food_result.label,
                             "food_score": food_result.score,
+                            "motor_enabled": self.drive_motors,
+                            "motor_mock": bool(motor.using_mock) if motor is not None else False,
                             "reason": command.reason,
                             "error": None,
                         }
@@ -288,6 +313,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--camera", default="0")
     parser.add_argument("--backend", choices=["opencv", "picamera2"], default="opencv")
     parser.add_argument("--line-mode", choices=["black", "color"], default="black")
+    parser.add_argument("--black-value-max", type=int, default=LineDetectionConfig().black_value_max)
+    parser.add_argument("--line-min-area", type=float, default=LineDetectionConfig().min_area)
+    parser.add_argument("--line-morph-kernel-size", type=int, default=LineDetectionConfig().morph_kernel_size)
+    parser.add_argument("--roi-top-ratio", type=float, default=LineDetectionConfig().roi_top_ratio)
+    parser.add_argument("--roi-bottom-ratio", type=float, default=LineDetectionConfig().roi_bottom_ratio)
     parser.add_argument("--sign-mode", choices=["both", "red", "aruco", "none"], default="both")
     parser.add_argument("--food-model", default="", help="Path to a TFLite SSD MobileNet model.")
     parser.add_argument("--food-labels", default="", help="Path to labels file for the TFLite model.")
@@ -299,13 +329,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--kp", type=float, default=default_drive.kp)
     parser.add_argument("--deadband-px", type=float, default=default_drive.deadband_px)
     parser.add_argument("--jpeg-quality", type=int, default=80)
+    parser.add_argument("--drive", action="store_true", help="Actually send stream decisions to the motors.")
+    parser.add_argument("--dry-run", action="store_true", help="Use mock motor outputs when --drive is enabled.")
     return parser
 
 
 def run(args: argparse.Namespace) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     camera_config = replace(CameraConfig(), source=args.camera, backend=args.backend)
-    line_config = replace(LineDetectionConfig(), mode=args.line_mode)
+    line_config = replace(
+        LineDetectionConfig(),
+        mode=args.line_mode,
+        black_value_max=args.black_value_max,
+        min_area=args.line_min_area,
+        morph_kernel_size=args.line_morph_kernel_size,
+        roi_top_ratio=args.roi_top_ratio,
+        roi_bottom_ratio=args.roi_bottom_ratio,
+    )
     sign_config = replace(SignDetectionConfig(), mode=args.sign_mode)
     food_config = FoodDetectionConfig(
         model_path=args.food_model,
@@ -329,6 +369,8 @@ def run(args: argparse.Namespace) -> int:
         drive_config,
         jpeg_quality=args.jpeg_quality,
         food_stop_seconds=args.food_stop_seconds,
+        drive_motors=args.drive,
+        dry_run=args.dry_run,
     )
     worker.start()
     app = create_app(worker)

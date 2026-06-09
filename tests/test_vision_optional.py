@@ -23,6 +23,24 @@ class VisionTests(unittest.TestCase):
         self.assertTrue(result.found)
         self.assertLess(result.offset, 0)
 
+    def test_detects_thin_black_line_with_morphology(self):
+        import cv2
+        import numpy as np
+
+        from mipet_car.config import LineDetectionConfig
+        from mipet_car.vision_line import detect_line
+
+        frame = np.full((240, 320, 3), 255, dtype=np.uint8)
+        cv2.line(frame, (150, 0), (145, 239), (0, 0, 0), 5)
+
+        result = detect_line(
+            frame,
+            LineDetectionConfig(min_area=100, morph_kernel_size=7),
+        )
+
+        self.assertTrue(result.found)
+        self.assertLess(result.offset, 0)
+
     def test_detects_red_sign(self):
         import cv2
         import numpy as np
@@ -41,4 +59,3 @@ class VisionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

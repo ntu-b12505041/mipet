@@ -47,10 +47,13 @@ EMOTION_TO_MQTT = {
 }
 
 # ── 持續情緒判斷秒數 ──────────────────────────
-SUSTAINED_SECONDS = 10
+SUSTAINED_SECONDS = 2
 
 # ── Model paths ───────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 def _find(name):
     local = os.path.join(BASE_DIR, "model", name)
@@ -69,6 +72,19 @@ SMOOTH_WINDOW = 10
 
 # ── HTTP stream port ──────────────────────────
 HTTP_PORT = 5000
+
+# Owner approach behavior. The motor driver comes from mipet_car, so the
+# already-tested TB6612 wiring/config remains the source of truth.
+OWNER_APPROACH_SPEED = 0.5
+STRANGER_BACK_SPEED = 0.35
+STRANGER_BACK_SECONDS = 0.8
+OWNER_LOST_STOP_SECONDS = 0.7
+OWNER_DEADBAND_RATIO = 0.12
+OWNER_MAX_TURN = 0.35
+OWNER_TURN_KP = 0.65
+DEFAULT_CAMERA_WIDTH = 320
+DEFAULT_CAMERA_HEIGHT = 240
+DEFAULT_PROCESS_EVERY = 3
 
 TEMPLATE = '''<!DOCTYPE html>
 <html lang="en">
@@ -352,6 +368,45 @@ def api_status():
 # ─────────────────────────────────────────────
 #  載入 KNN 人臉辨識模型
 # ─────────────────────────────────────────────
+def _draw_status_overlay(frame_bgr, vision_event=None, emotion=None, detecting=False, motor_text=""):
+    state = _emotion_sys.engine.get_state()
+    vars_now = _emotion_sys.engine.get_vars()
+    lines = [
+        f"STATE: {state}",
+        f"Happiness : {vars_now.get('happiness', 0)}",
+        f"Loneliness: {vars_now.get('loneliness', 0)}",
+        f"Trust     : {vars_now.get('trust', 0)}",
+    ]
+
+    x, y = 8, 8
+    line_h = 15
+    width = 165
+    height = 10 + line_h * len(lines)
+    overlay = frame_bgr.copy()
+    cv2.rectangle(overlay, (x, y), (x + width, y + height), (20, 20, 20), -1)
+    cv2.addWeighted(overlay, 0.55, frame_bgr, 0.45, 0, frame_bgr)
+
+    color_by_state = {
+        "HAPPY": (0, 255, 255),
+        "LONELY": (255, 180, 80),
+        "CARING": (180, 120, 255),
+        "IDLE": (230, 230, 230),
+    }
+    for idx, text in enumerate(lines):
+        color = color_by_state.get(state, (230, 230, 230)) if idx == 0 else (245, 245, 245)
+        cv2.putText(
+            frame_bgr,
+            text,
+            (x + 7, y + 17 + idx * line_h),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.34,
+            color,
+            1,
+            cv2.LINE_AA,
+        )
+    return frame_bgr
+
+
 def load_model():
     with open(MODEL_FILE, "rb") as f:
         data = pickle.load(f)
@@ -389,10 +444,90 @@ def predict_emotion(face_bgr):
 #  MQTT client
 # ─────────────────────────────────────────────
 def make_mqtt_client():
-    client = mqtt.Client(client_id=CLIENT_ID, protocol=mqtt.MQTTv5)
-    client.connect(BROKER, PORT, keepalive=60)
-    client.loop_start()
-    return client
+    class DisabledMqttClient:
+        def publish(self, *args, **kwargs):
+            return None
+
+        def loop_stop(self):
+            return None
+
+        def disconnect(self):
+            return None
+
+    try:
+        client = mqtt.Client(client_id=CLIENT_ID, protocol=mqtt.MQTTv5)
+        client.connect(BROKER, PORT, keepalive=60)
+        client.loop_start()
+        return client
+    except Exception as exc:
+        print(f"[Vision] MQTT disabled: {exc}")
+        return DisabledMqttClient()
+
+
+class OwnerApproachController:
+    def __init__(
+        self,
+        enabled=True,
+        speed=OWNER_APPROACH_SPEED,
+        turn_kp=OWNER_TURN_KP,
+        max_turn=OWNER_MAX_TURN,
+        deadband_ratio=OWNER_DEADBAND_RATIO,
+    ):
+        self.enabled = enabled
+        self.speed = max(0.0, min(float(speed), 1.0))
+        self.turn_kp = max(0.0, float(turn_kp))
+        self.max_turn = max(0.0, min(float(max_turn), 1.0))
+        self.deadband_ratio = max(0.0, min(float(deadband_ratio), 1.0))
+        self.motor = None
+        self.moving = False
+
+        if not enabled:
+            print("[Approach] Motor approach disabled.")
+            return
+
+        try:
+            from mipet_car.motor import MotorDriver
+
+            self.motor = MotorDriver(allow_mock_fallback=False)
+            print(f"[Approach] Motor ready. Owner approach speed={self.speed:.2f}")
+        except Exception as exc:
+            self.enabled = False
+            print(f"[Approach] Motor unavailable; owner approach disabled: {exc}")
+
+    def approach(self):
+        self.follow_owner(None, 0)
+
+    def follow_owner(self, owner_center_x, frame_width):
+        if not self.enabled or self.motor is None:
+            return
+        self.motor.set_speed(self.speed, self.speed)
+        if not self.moving:
+            print(f"[Approach] owner detected -> forward speed={self.speed:.2f}")
+        self.moving = True
+
+    def back_away(self, speed=STRANGER_BACK_SPEED):
+        if not self.enabled or self.motor is None:
+            return
+        speed = max(0.0, min(float(speed), 1.0))
+        self.motor.set_speed(-speed, -speed)
+        if not self.moving:
+            print(f"[Approach] stranger detected -> back away speed={speed:.2f}")
+        self.moving = True
+
+    def stop(self, reason=""):
+        if self.motor is None:
+            return
+        self.motor.stop()
+        if self.moving:
+            suffix = f" ({reason})" if reason else ""
+            print(f"[Approach] stop{suffix}")
+        self.moving = False
+
+    def close(self):
+        if self.motor is None:
+            return
+        self.stop("shutdown")
+        self.motor.close()
 
 
 # ─────────────────────────────────────────────
@@ -406,12 +541,13 @@ def classify_and_draw(frame_bgr, knn, threshold, k,
     locations = face_recognition.face_locations(rgb, model="hog")
 
     if not locations:
-        return frame_bgr, None, None
+        return frame_bgr, None, None, None
 
     encodings    = face_recognition.face_encodings(rgb, locations)
     vision_event = "stranger_seen"
     smoothed_emotion = None
     owner_box    = None
+    owner_center_x = None
 
     for (top, right, bottom, left), enc in zip(locations, encodings):
         distances, _ = knn.kneighbors([enc], n_neighbors=k)
@@ -424,6 +560,7 @@ def classify_and_draw(frame_bgr, knn, threshold, k,
             color        = (0, 255, 0)
             text         = f"OWNER {dist:.2f}"
             owner_box    = (top, right, bottom, left)
+            owner_center_x = (left + right) / 2.0
         else:
             color = (0, 0, 255)
             text  = f"STRANGER {dist:.2f}"
@@ -463,7 +600,7 @@ def classify_and_draw(frame_bgr, knn, threshold, k,
                     (left, top - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-    return frame_bgr, vision_event, smoothed_emotion
+    return frame_bgr, vision_event, smoothed_emotion, owner_center_x
 
 
 # ─────────────────────────────────────────────
@@ -477,7 +614,7 @@ def run_test(image_path):
         return
 
     history = deque(maxlen=SMOOTH_WINDOW)
-    annotated, vision_event, emotion = classify_and_draw(
+    annotated, vision_event, emotion, _ = classify_and_draw(
         frame, knn, threshold, k, history, detecting=True)
 
     if vision_event is None:
@@ -496,7 +633,22 @@ def run_test(image_path):
 # ─────────────────────────────────────────────
 #  即時模式
 # ─────────────────────────────────────────────
-def run_live():
+def run_live(
+    *,
+    approach_speed=OWNER_APPROACH_SPEED,
+    motor_enabled=True,
+    touch_pin=TTP223_PIN,
+    host="0.0.0.0",
+    port=HTTP_PORT,
+    width=DEFAULT_CAMERA_WIDTH,
+    height=DEFAULT_CAMERA_HEIGHT,
+    process_every=DEFAULT_PROCESS_EVERY,
+    vflip=False,
+    hflip=False,
+    owner_turn_kp=OWNER_TURN_KP,
+    owner_max_turn=OWNER_MAX_TURN,
+    owner_deadband_ratio=OWNER_DEADBAND_RATIO,
+):
     from gpiozero import Button, Device
     from gpiozero.pins.lgpio import LGPIOFactory
     from picamera2 import Picamera2
@@ -510,9 +662,17 @@ def run_live():
     detecting         = False
     detect_start_time = None
     touch_lock        = threading.Lock()
+    approach          = OwnerApproachController(
+        enabled=motor_enabled,
+        speed=approach_speed,
+        turn_kp=owner_turn_kp,
+        max_turn=owner_max_turn,
+        deadband_ratio=owner_deadband_ratio,
+    )
 
     def on_touch():
         nonlocal detecting, detect_start_time
+        approach.stop("touch sensor pressed")
         # 每次觸碰都立即更新情緒變數（無冷卻）
         mqtt_client.publish(TOPIC_EVT, json.dumps({"event": "touched"}))
         emotion_event("touched")
@@ -524,7 +684,7 @@ def run_live():
             else:
                 print("[Touch] TTP223 觸碰！情緒變數已更新")
 
-    ttp223 = Button(TTP223_PIN, pull_up=False)
+    ttp223 = Button(touch_pin, pull_up=False)
     ttp223.when_pressed = on_touch
 
     # ── 載入模型與攝影機 ──────────────────────
@@ -533,23 +693,35 @@ def run_live():
     print(f"[Vision] MQTT 連線到 {BROKER}")
 
     cam = Picamera2()
+    process_every = max(1, int(process_every))
     config = cam.create_video_configuration(
-        {'size': (640, 480), 'format': 'XBGR8888'},
-        transform=Transform(vflip=1),
+        {'size': (int(width), int(height)), 'format': 'XBGR8888'},
+        transform=Transform(vflip=int(vflip), hflip=int(hflip)),
         controls={'NoiseReductionMode': 2, 'Sharpness': 1.5}
     )
     cam.configure(config)
-    cam.start_recording(JpegEncoder(), FileOutput(raw_output), Quality.VERY_HIGH)
-    print(f"[Vision] 攝影機啟動，瀏覽器開 http://<Pi IP>:{HTTP_PORT}")
+    cam.start_recording(JpegEncoder(), FileOutput(raw_output), Quality.MEDIUM)
+    print(
+        f"[Vision] camera started {width}x{height}, process_every={process_every}, "
+        f"vflip={vflip}, hflip={hflip}. Open http://<Pi IP>:{port}"
+    )
 
     flask_thread = threading.Thread(
-        target=lambda: app.run(host="0.0.0.0", port=HTTP_PORT, threaded=True),
+        target=lambda: app.run(host=host, port=port, threaded=True),
         daemon=True
     )
     flask_thread.start()
 
     last_vis_sent: dict[str, float] = {}
     emotion_history  = deque(maxlen=SMOOTH_WINDOW)
+    last_owner_seen   = 0.0
+    frame_index       = 0
+    last_annotated    = None
+    last_vision_event = None
+    last_emotion      = None
+    last_owner_center_x = None
+    stranger_back_until = 0.0
+    last_lcd_emotion = None
 
     # ── 持續情緒追蹤變數 ──────────────────────
     sustained_mqtt_evt = None   # 目前追蹤中的 MQTT 事件
@@ -570,11 +742,21 @@ def run_live():
             with touch_lock:
                 cur_detecting = detecting
 
-            annotated, vision_event, smoothed_emotion = classify_and_draw(
-                frame, knn, threshold, k, emotion_history, cur_detecting)
+            frame_index += 1
+            should_process = last_annotated is None or frame_index % process_every == 0
 
-            _, jpeg = cv2.imencode('.jpg', annotated)
-            output.write(jpeg.tobytes())
+            if should_process:
+                annotated, vision_event, smoothed_emotion, owner_center_x = classify_and_draw(
+                    frame, knn, threshold, k, emotion_history, cur_detecting)
+                last_annotated = annotated
+                last_vision_event = vision_event
+                last_emotion = smoothed_emotion
+                last_owner_center_x = owner_center_x
+            else:
+                annotated = last_annotated
+                vision_event = last_vision_event
+                smoothed_emotion = last_emotion if cur_detecting else None
+                owner_center_x = last_owner_center_x
 
             now = time.time()
 
@@ -585,10 +767,29 @@ def run_live():
                     last_vis_sent[vision_event] = now
                     print(f"[Vision] {vision_event}")
 
-                    # TODO: 偵測到 owner 時發送靠近指令（Serial/MQTT 待決定）
+            if vision_event == "owner_seen":
+                last_owner_seen = now
+                stranger_back_until = 0.0
+                if cur_detecting:
+                    approach.stop("emotion detection active")
+                else:
+                    approach.follow_owner(owner_center_x, frame.shape[1])
+            elif vision_event == "stranger_seen" and not cur_detecting:
+                stranger_back_until = now + STRANGER_BACK_SECONDS
+                approach.back_away(STRANGER_BACK_SPEED)
+            elif cur_detecting:
+                approach.stop("emotion detection active")
+            elif now < stranger_back_until:
+                approach.back_away(STRANGER_BACK_SPEED)
+            elif now - last_owner_seen >= OWNER_LOST_STOP_SECONDS:
+                approach.stop("owner lost")
 
             # ── 情緒持續判斷邏輯 ─────────────────
             if cur_detecting and smoothed_emotion is not None:
+                if smoothed_emotion != last_lcd_emotion:
+                    _emotion_sys.show_emotion(smoothed_emotion)
+                    last_lcd_emotion = smoothed_emotion
+
                 mqtt_evt = EMOTION_TO_MQTT.get(smoothed_emotion)
 
                 if mqtt_evt is None:
@@ -602,6 +803,8 @@ def run_live():
                             detecting         = False
                             detect_start_time = None
                             emotion_history.clear()
+                            _emotion_sys.refresh_state_display()
+                            last_lcd_emotion = None
                             print("[Touch] 偵測逾時（30 分鐘），停止偵測")
 
                 elif mqtt_evt != sustained_mqtt_evt:
@@ -626,10 +829,32 @@ def run_live():
                         sustained_mqtt_evt = None
                         sustained_start    = None
                         emotion_history.clear()
+                        _emotion_sys.refresh_state_display()
+                        last_lcd_emotion = None
+
+            stream_frame = annotated.copy()
+            if vision_event == "owner_seen" and not cur_detecting:
+                motor_text = f"forward {approach.speed:.2f}"
+            elif vision_event == "stranger_seen" and not cur_detecting:
+                motor_text = f"back {STRANGER_BACK_SPEED:.2f}"
+            elif cur_detecting:
+                motor_text = "stop/emotion"
+            else:
+                motor_text = "stop"
+            _draw_status_overlay(
+                stream_frame,
+                vision_event=vision_event,
+                emotion=smoothed_emotion,
+                detecting=cur_detecting,
+                motor_text=motor_text,
+            )
+            _, jpeg = cv2.imencode('.jpg', stream_frame)
+            output.write(jpeg.tobytes())
 
     except KeyboardInterrupt:
         print("\n[Vision] 停止")
     finally:
+        approach.close()
         cam.stop()
         ttp223.close()
         mqtt_client.loop_stop()
@@ -642,9 +867,41 @@ def run_live():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MiPet 人臉辨識模組")
     parser.add_argument("--test", metavar="IMAGE", help="測試模式：傳入圖片路徑")
+    parser.add_argument("--approach-speed", type=float, default=OWNER_APPROACH_SPEED)
+    parser.add_argument("--no-motor", action="store_true", help="Disable owner approach motor control.")
+    parser.add_argument("--touch-pin", type=int, default=TTP223_PIN)
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=HTTP_PORT)
+    parser.add_argument("--width", type=int, default=DEFAULT_CAMERA_WIDTH)
+    parser.add_argument("--height", type=int, default=DEFAULT_CAMERA_HEIGHT)
+    parser.add_argument(
+        "--process-every",
+        type=int,
+        default=DEFAULT_PROCESS_EVERY,
+        help="Run face/emotion recognition once every N camera frames.",
+    )
+    parser.add_argument("--vflip", action="store_true", help="Flip camera vertically.")
+    parser.add_argument("--hflip", action="store_true", help="Flip camera horizontally.")
+    parser.add_argument("--owner-turn-kp", type=float, default=OWNER_TURN_KP)
+    parser.add_argument("--owner-max-turn", type=float, default=OWNER_MAX_TURN)
+    parser.add_argument("--owner-deadband-ratio", type=float, default=OWNER_DEADBAND_RATIO)
     args = parser.parse_args()
 
     if args.test:
         run_test(args.test)
     else:
-        run_live()
+        run_live(
+            approach_speed=args.approach_speed,
+            motor_enabled=not args.no_motor,
+            touch_pin=args.touch_pin,
+            host=args.host,
+            port=args.port,
+            width=args.width,
+            height=args.height,
+            process_every=args.process_every,
+            vflip=args.vflip,
+            hflip=args.hflip,
+            owner_turn_kp=args.owner_turn_kp,
+            owner_max_turn=args.owner_max_turn,
+            owner_deadband_ratio=args.owner_deadband_ratio,
+        )

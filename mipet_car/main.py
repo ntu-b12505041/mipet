@@ -26,6 +26,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--debug", action="store_true", help="Show OpenCV debug window and overlays.")
     parser.add_argument("--headless", action="store_true", help="Do not open a GUI window.")
     parser.add_argument("--line-mode", choices=["black", "color"], default="black")
+    parser.add_argument("--black-value-max", type=int, default=LineDetectionConfig().black_value_max)
+    parser.add_argument("--line-min-area", type=float, default=LineDetectionConfig().min_area)
+    parser.add_argument("--line-morph-kernel-size", type=int, default=LineDetectionConfig().morph_kernel_size)
+    parser.add_argument("--roi-top-ratio", type=float, default=LineDetectionConfig().roi_top_ratio)
+    parser.add_argument("--roi-bottom-ratio", type=float, default=LineDetectionConfig().roi_bottom_ratio)
     parser.add_argument("--sign-mode", choices=["both", "red", "aruco", "none"], default="both")
     parser.add_argument("--food-model", default="", help="Path to a TFLite SSD MobileNet model.")
     parser.add_argument("--food-labels", default="", help="Path to labels file for the TFLite model.")
@@ -65,7 +70,15 @@ def run(args: argparse.Namespace) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     camera_config = replace(CameraConfig(), source=args.camera, backend=args.backend)
-    line_config = replace(LineDetectionConfig(), mode=args.line_mode)
+    line_config = replace(
+        LineDetectionConfig(),
+        mode=args.line_mode,
+        black_value_max=args.black_value_max,
+        min_area=args.line_min_area,
+        morph_kernel_size=args.line_morph_kernel_size,
+        roi_top_ratio=args.roi_top_ratio,
+        roi_bottom_ratio=args.roi_bottom_ratio,
+    )
     sign_config = replace(SignDetectionConfig(), mode=args.sign_mode)
     food_config = FoodDetectionConfig(
         model_path=args.food_model,

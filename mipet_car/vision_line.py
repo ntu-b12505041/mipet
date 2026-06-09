@@ -57,8 +57,13 @@ def detect_line(frame, config: Optional[LineDetectionConfig] = None, *, debug: b
     kernel_size = max(1, int(config.morph_kernel_size))
     if kernel_size > 1:
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_size, kernel_size))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        if config.mode == "black":
+            # Opening erodes thin tape lines and can make a valid line disappear.
+            # Closing keeps the line while filling tiny camera/noise gaps.
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        else:
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
     contours_info = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     contours = contours_info[-2]
@@ -146,4 +151,3 @@ def detect_line(frame, config: Optional[LineDetectionConfig] = None, *, debug: b
         mask=mask if debug else None,
         debug_frame=debug_frame,
     )
-

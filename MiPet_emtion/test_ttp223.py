@@ -4,7 +4,7 @@ import time
 
 Device.pin_factory = LGPIOFactory()
 
-TTP223_PIN = 23
+TTP223_PIN = 25
 
 print("TTP223 測試開始（GPIO 23）")
 print("請觸碰感測器，Ctrl+C 結束\n")
