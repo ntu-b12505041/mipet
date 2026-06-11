@@ -65,7 +65,7 @@ EMOTION_ONNX_FILE = _find("emotion.onnx")
 
 # ── Cooldowns（秒）────────────────────────────
 COOLDOWN_VIS    = 10
-DETECT_TIMEOUT  = 60 * 30
+DETECT_TIMEOUT  = 60
 
 # ── Temporal smoothing ────────────────────────
 SMOOTH_WINDOW = 10
@@ -760,6 +760,21 @@ def run_live(
 
             now = time.time()
 
+            if cur_detecting and detect_start_time is not None:
+                if now - detect_start_time >= DETECT_TIMEOUT:
+                    with touch_lock:
+                        detecting = False
+                        detect_start_time = None
+
+                    cur_detecting = False
+                    sustained_mqtt_evt = None
+                    sustained_start = None
+                    emotion_history.clear()
+                    last_lcd_emotion = None
+                    _emotion_sys.refresh_state_display()
+
+                    print("[Emotion] 60 秒結束，回到人臉追蹤模式")
+
             # ── mimicpet/vision（owner/stranger，有冷卻）──
             if vision_event:
                 if now - last_vis_sent.get(vision_event, 0) >= COOLDOWN_VIS:
@@ -797,16 +812,6 @@ def run_live(
                     sustained_mqtt_evt = None
                     sustained_start    = None
 
-                    # 逾時檢查（30 分鐘）
-                    with touch_lock:
-                        if detect_start_time and (now - detect_start_time) >= DETECT_TIMEOUT:
-                            detecting         = False
-                            detect_start_time = None
-                            emotion_history.clear()
-                            _emotion_sys.refresh_state_display()
-                            last_lcd_emotion = None
-                            print("[Touch] 偵測逾時（30 分鐘），停止偵測")
-
                 elif mqtt_evt != sustained_mqtt_evt:
                     # 情緒改變：重置計時
                     sustained_mqtt_evt = mqtt_evt
@@ -824,13 +829,8 @@ def run_live(
                         print(f"[Emotion] ✅ {mqtt_evt} 確認，停止偵測")
                         emotion_event(mqtt_evt)
 
-                        with touch_lock:
-                            detecting = False
                         sustained_mqtt_evt = None
                         sustained_start    = None
-                        emotion_history.clear()
-                        _emotion_sys.refresh_state_display()
-                        last_lcd_emotion = None
 
             stream_frame = annotated.copy()
             if vision_event == "owner_seen" and not cur_detecting:
