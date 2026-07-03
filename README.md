@@ -65,7 +65,7 @@ MiPet/
 | TTP223 | Raspberry Pi 預設腳位 | 說明 |
 | --- | --- | --- |
 | SIG | GPIO 25 | 觸摸訊號輸出 |
-| VCC | 3.3V（Pin 1） | 電源（⚠️ 不可接 5V） |
+| VCC | 3.3V（Pin 1） | 電源 |
 | GND | GND（Pin 6） | 接地 |
 
 
