@@ -11,17 +11,34 @@
 ## 專案結構
 
 ```text
-mipet_car/
-├── main.py          # 主迴圈：相機、辨識、決策、馬達整合
-├── camera.py        # OpenCV 相機讀取
-├── vision_line.py   # 地面路線偵測
-├── vision_sign.py   # 紅色告示牌 / ArUco 偵測
-├── decision.py      # 狀態機與差速控制
-├── motor.py         # TB6612 馬達控制
-└── config.py        # GPIO 腳位與調校參數
+MiPet/
+├── mipet_car/                    # 自走車模組
+│   ├── main.py                   # 主迴圈：相機、辨識、決策、馬達整合
+│   ├── camera.py                 # OpenCV 相機讀取
+│   ├── vision_line.py            # 地面路線偵測
+│   ├── vision_sign.py            # 紅色告示牌 / ArUco 偵測
+│   ├── decision.py               # 狀態機與差速控制
+│   ├── motor.py                  # TB6612 馬達控制
+│   └── config.py                 # GPIO 腳位與調校參數
+│
+├── MiPet_emotion/                # 情緒關懷模組
+│   ├── model/
+│   │   ├── emotion.onnx          # ONNX 表情辨識模型
+│   │   ├── encodings.pkl         # 人臉特徵向量資料庫
+│   │   └── face_model.pkl        # KNN 人臉辨識模型
+│   ├── scripts/                  # 工具腳本
+│   ├── pi_vision.py              # 人臉辨識 + 表情辨識主程式
+│   ├── pi_emotion.py             # 情緒模型 + 狀態機 + LCD 動畫
+│   ├── lcd_display.py            # LCD1602 自訂字元動畫控制
+│   ├── test_emotion.py           # 表情辨識單獨測試
+│   ├── test_lcd.py               # LCD 動畫單獨測試
+│   ├── test_ttp223.py            # TTP223 觸摸感測器測試
+│   ├── setup_pi.sh               # Pi 環境一鍵安裝腳本
+└── └── requirements_pi.txt       # Pi 端套件清單
+
 ```
 
-## 建議接線
+## 接線
 
 預設 GPIO 腳位集中在 `mipet_car/config.py`，接線不同時只要改那裡。
 
@@ -38,7 +55,19 @@ mipet_car/
 | VM | 馬達電池正極 | 馬達電源 |
 | GND | Pi GND + 電池負極 | 必須共地 |
 
-重要：Raspberry Pi GND、TB6612 GND、馬達電池負極一定要共地。
+| LCD1602（PCF8574 I2C） | Raspberry Pi 預設腳位 | 說明 |
+| --- | --- | --- |
+| SDA | GPIO 2（Pin 3） | I2C 資料線 |
+| SCL | GPIO 3（Pin 5） | I2C 時脈線 |
+| VCC | 5V（Pin 2） | 電源 |
+| GND | GND（Pin 6） | 接地 |
+
+| TTP223 | Raspberry Pi 預設腳位 | 說明 |
+| --- | --- | --- |
+| SIG | GPIO 25 | 觸摸訊號輸出 |
+| VCC | 3.3V（Pin 1） | 電源（⚠️ 不可接 5V） |
+| GND | GND（Pin 6） | 接地 |
+
 
 ## Cursor SSH 開發流程
 
